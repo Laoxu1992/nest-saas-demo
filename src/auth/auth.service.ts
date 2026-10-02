@@ -1,26 +1,60 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
-
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
+import { PrismaService } from '../prisma/prisma.service';
+import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
+  constructor(
+    private prisma: PrismaService,
+    private jwt: JwtService,
+  ) {}
+  async register(dto: RegisterDto) {
+    const existUser = await this.prisma.user.findUnique({
+      where: {
+        username: dto.username,
+      },
+    });
+    if (existUser) throw new BadRequestException('用户名已存在');
+
+    const hashPwd = await bcrypt.hash(dto.password, 10);
+    const user = await this.prisma.user.create({
+      data: {
+        username: dto.username,
+        email: dto.email,
+        password: hashPwd,
+      },
+    });
+    const { password, ...userRest } = user;
+    return userRest;
   }
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  async login(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username: dto.username,
+      },
+      include: {
+        roles: {
+          include: {
+            permissions: true,
+          },
+        },
+      },
+    });
+    if (!user) throw new BadRequestException('用户不存在');
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+    const right = await bcrypt.compare(dto.password, user.password);
+    if (!right) throw new BadRequestException('密码错误');
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+    const payload = this.jwt.sign({
+      sub: user.id,
+      username: user.username,
+    });
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    return {
+      access_token: payload,
+    };
   }
 }
