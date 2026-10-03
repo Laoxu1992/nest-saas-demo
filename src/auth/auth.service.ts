@@ -18,6 +18,13 @@ export class AuthService {
     });
     if (existUser) throw new BadRequestException('用户名已存在');
 
+    const existEmail = await this.prisma.user.findUnique({
+      where: {
+        email: dto.email,
+      },
+    });
+    if (existEmail) throw new BadRequestException('邮箱已存在');
+
     const hashPwd = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
       data: {
